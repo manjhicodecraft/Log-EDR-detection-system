@@ -26,6 +26,23 @@ python -m backend
 
 Open `http://127.0.0.1:8000`.
 
+Desktop app:
+
+```text
+run_trinetra_desktop.bat
+```
+
+Or manually:
+
+```powershell
+cd frontend
+npm install
+npm run electron
+```
+
+The Electron app builds the React dashboard, starts the FastAPI backend if it is
+not already running, then opens Trinetra Sentinel in a desktop window.
+
 The dashboard is a **React + Vite** app in `frontend/`. `run_trinetra.bat` builds it
 automatically when Node.js is installed.
 
