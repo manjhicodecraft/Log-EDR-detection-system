@@ -17,11 +17,18 @@ import USBSecurity from "./components/USBSecurity.jsx";
 import CollectorHealth from "./components/CollectorHealth.jsx";
 import Toast from "./components/Toast.jsx";
 import { useDashboard } from "./hooks/useDashboard.js";
-import { useState } from "react";
+import { useState, useCallback, useRef } from "react";
 
 export default function App() {
-  const { overview, alerts, processes, snapshot, logStream, logAlerts, modules, activity, usbStatus, aiAnalysis, geminiAnalysis, mitreMapping, voiceLanguages, voiceAvailable, toast, resetAlerts } = useDashboard();
+  const { overview, alerts, processes, snapshot, logStream, modules, activity, usbStatus, aiAnalysis, geminiAnalysis, mitreMapping, voiceLanguages, voiceAvailable, toast, resetAlerts } = useDashboard();
   const [explainAlert, setExplainAlert] = useState(null);
+  const voicePlayerRef = useRef(null);
+
+  // When user clicks "Voice Summary" in AIThreatSummary,
+  // trigger the VoiceAlertPlayer's play with the same analysis text
+  const handleSpeakAnalysis = useCallback(() => {
+    if (voicePlayerRef.current?.play) voicePlayerRef.current.play();
+  }, []);
 
   return (
     <>
@@ -47,11 +54,13 @@ export default function App() {
           <AIThreatSummary
             geminiAnalysis={geminiAnalysis}
             mitreMapping={mitreMapping}
-            onSpeak={null}
+            onSpeak={handleSpeakAnalysis}
           />
           <VoiceAlertPlayer
+            ref={voicePlayerRef}
             languages={voiceLanguages}
             voiceAvailable={voiceAvailable}
+            geminiAnalysis={geminiAnalysis}
           />
         </section>
 
@@ -60,7 +69,7 @@ export default function App() {
         </section>
 
         <section className="grid-full">
-          <LogDetection logStream={logStream} logAlerts={logAlerts} />
+          <LogDetection logStream={logStream} />
         </section>
 
         <section className="grid-full">

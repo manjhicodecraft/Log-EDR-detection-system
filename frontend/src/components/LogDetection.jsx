@@ -8,10 +8,9 @@ const LEVEL_CLASS = {
   audit_failure: "level-warn",
 };
 
-export default function LogDetection({ logStream, logAlerts }) {
+export default function LogDetection({ logStream }) {
   const entries = logStream?.entries ?? [];
   const stats = logStream?.stats ?? { total_scanned: 0, buffered: 0 };
-  const suspiciousAlerts = logAlerts ?? [];
 
   return (
     <article className="panel panel-log">
@@ -78,29 +77,6 @@ export default function LogDetection({ logStream, logAlerts }) {
           </table>
         )}
       </div>
-
-      {suspiciousAlerts.length > 0 && (
-        <>
-          <div className="log-section-label">Suspicious Detections</div>
-          <div className="scroll-area log-list">
-            {suspiciousAlerts.slice(0, 10).map((alert, i) => (
-              <div key={`${alert.timestamp}-sus-${i}`} className={`log-item severity-${alert.severity}`}>
-                <span className="alert-marker" />
-                <div className="log-body">
-                  <div className="log-tags">
-                    <span className="tag tag-warn">{alert.metadata?.log_name?.toUpperCase() || "LOG"}</span>
-                    <span className="tag">ID {alert.metadata?.event_id ?? "-"}</span>
-                    <span className={`tag tag-sev-${alert.severity}`}>{alert.severity.toUpperCase()}</span>
-                  </div>
-                  <h4>{alert.title}</h4>
-                  <p>{alert.summary}</p>
-                </div>
-                <time>{fmtTime(alert.timestamp)}</time>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
     </article>
   );
 }

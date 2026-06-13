@@ -19,6 +19,7 @@ from .telemetry import USBCollector
 from .ai.gemini_analyzer import GeminiThreatAnalyzer
 from .ai.sarvam_voice import SarvamVoiceModule
 from .ai.mitre_mapper import build_mitre_summary
+from .engines.performance_optimizer import PerformanceOptimizer
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -29,6 +30,7 @@ ai_analysis = AIAnalysisModule()
 usb_status_scanner = USBSecurityEngine()
 gemini_analyzer = GeminiThreatAnalyzer()
 voice_module = SarvamVoiceModule()
+optimizer = PerformanceOptimizer()
 clients: set[WebSocket] = set()
 
 
@@ -167,6 +169,11 @@ def module_inventory() -> list[dict]:
             "name": "Sarvam AI Voice Assistant",
             "status": "active" if voice_module.available else "limited",
             "detail": "Multilingual voice notifications (English, Hindi, Telugu) via Sarvam AI TTS with browser fallback.",
+        },
+        {
+            "name": "Performance Optimizer",
+            "status": "active",
+            "detail": "Scans processes, identifies resource-heavy tasks safe to stop, protects Windows-critical processes.",
         },
     ]
 
@@ -443,6 +450,65 @@ def get_voice_languages():
         "languages": voice_module.get_supported_languages(),
         "available": voice_module.available,
     }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Performance Optimizer endpoints (additive — no existing code modified)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@app.get("/api/optimizer/scan")
+def optimizer_scan():
+    """Scan running processes and return optimizable vs protected list."""
+    return optimizer.scan_optimizable()
+
+
+@app.post("/api/optimizer/kill")
+def optimizer_kill(payload: dict = Body(...)):
+    """Safely kill a single process by PID with critical-process safety checks."""
+    pid = payload.get("pid")
+    name = payload.get("name", "")
+    if not pid or not isinstance(pid, int):
+        return {"success": False, "error": "Invalid or missing PID"}
+
+    result = optimizer.kill_process(pid, name)
+
+    # Log the kill event to database
+    if result["success"]:
+        event = engine.create_event(
+            "process_terminated",
+            f"Process stopped: {result['name']} (PID {pid})",
+            f"User terminated {result['name']} via Performance Optimizer.",
+            "system",
+            source="performance-optimizer",
+            metadata={"pid": pid, "name": result["name"]},
+        )
+        event["score"], event["severity"] = 0, "low"
+        db.add_event(event)
+
+    return result
+
+
+@app.post("/api/optimizer/kill-all")
+def optimizer_kill_all():
+    """Kill all 'safe' rated processes in one batch."""
+    result = optimizer.kill_all_safe()
+
+    # Log each successful kill
+    for r in result.get("results", []):
+        if r["success"]:
+            event = engine.create_event(
+                "process_terminated",
+                f"Process stopped: {r['name']} (PID {r['pid']})",
+                f"Batch-terminated {r['name']} via Performance Optimizer.",
+                "system",
+                source="performance-optimizer",
+                metadata={"pid": r["pid"], "name": r["name"], "batch": True},
+            )
+            event["score"], event["severity"] = 0, "low"
+            db.add_event(event)
+
+    return result
 
 
 @app.websocket("/ws")

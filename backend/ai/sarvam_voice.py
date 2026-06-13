@@ -119,21 +119,73 @@ class SarvamVoiceModule:
         return translations["low_threat"]
 
     def translate_analysis(self, analysis_text: str, language: str = "en") -> str:
-        """Create a short voice-friendly summary from a full analysis."""
+        """Create a short voice-friendly summary from a full Gemini analysis.
+
+        Strips markdown, extracts the most important sentences (Executive Summary
+        + first bullet of Technical Analysis), and keeps the result under ~200 words
+        so Sarvam TTS produces clear, natural audio.
+        """
+        import re
+
+        if not analysis_text:
+            return "No analysis available."
+
+        # ── Step 1: Strip all markdown ──
+        clean = analysis_text
+        clean = re.sub(r"#{1,6}\s*", "", clean)        # ## headers
+        clean = re.sub(r"\*{1,2}(.+?)\*{1,2}", r"\1", clean)  # **bold**
+        clean = re.sub(r"`{1,3}[^`]*`{1,3}", "", clean)       # inline/block code
+        clean = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", clean)  # [links](url)
+        clean = re.sub(r"^\s*[-*+]\s+", "", clean, flags=re.MULTILINE)  # bullet markers
+        clean = re.sub(r"^\s*\d+\.\s+", "", clean, flags=re.MULTILINE)  # numbered lists
+
+        # ── Step 1b: Remove known section titles so they don't leak into voice ──
+        section_titles = [
+            "Executive Summary", "Technical Analysis", "Potential Impact",
+            "MITRE ATT&CK Coverage", "Recommended Actions", "Conclusion",
+            "Incident Overview", "Timeline Summary", "Risk Assessment",
+            "MITRE ATT&CK References", "Recommended Mitigation Steps",
+        ]
+        for title in section_titles:
+            clean = re.sub(re.escape(title), "", clean, flags=re.IGNORECASE)
+
+        clean = re.sub(r"\s+", " ", clean).strip()
+
+        # ── Step 2: Split into sentences ──
+        # Clean double periods left by removed section titles
+        clean = re.sub(r"\.{2,}", ".", clean)
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", clean) if len(s.strip()) > 10]
+
+        # ── Step 3: Prioritise Executive Summary sentences ──
+        #    Gemini output starts with "## Executive Summary" so the first 2-3
+        #    sentences after stripping are the high-level overview — perfect for voice.
+        priority = sentences[:4]  # ~2-3 meaningful sentences from summary
+
+        # ── Step 4: Cap at ~180 words so audio stays short ──
+        words, result = 0, []
+        for s in priority:
+            wc = len(s.split())
+            if words + wc > 180:
+                break
+            result.append(s)
+            words += wc
+
+        short_summary = " ".join(s.rstrip(".") for s in result).rstrip(". ") + "."
+
+        # ── Step 5: For non-English, translate the short summary ──
         if language == "en":
-            # Extract first ~200 chars as a voice summary
-            clean = analysis_text.replace("#", "").replace("*", "").replace("`", "")
-            sentences = [s.strip() for s in clean.split(".") if s.strip()]
-            return ". ".join(sentences[:3]) + "."
+            return short_summary
 
         translations = ALERT_TRANSLATIONS.get(language, ALERT_TRANSLATIONS["hi"])
-        # For non-English, use pre-built translations based on content
-        if "critical" in analysis_text.lower() or "ransomware" in analysis_text.lower():
+        lower = analysis_text.lower()
+        if "critical" in lower or "ransomware" in lower:
             return translations["critical_threat"]
-        if "high" in analysis_text.lower():
+        if "high" in lower:
             return translations["high_threat"]
-        if "usb" in analysis_text.lower():
+        if "usb" in lower:
             return translations["usb_detected"]
+        if "failed login" in lower or "brute force" in lower:
+            return translations["failed_login"]
         return translations["system_normal"]
 
     def synthesize_speech(self, text: str, language: str = "en") -> dict:

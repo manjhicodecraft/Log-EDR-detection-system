@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { posture, severityColor } from "../utils/helpers.js";
 import MarkdownText from "./MarkdownText.jsx";
+import PerformanceOptimizer from "./PerformanceOptimizer.jsx";
 
 const PHASE_CONFIG = {
   immediate: {
@@ -89,6 +90,9 @@ export default function SecurityIndex({ overview }) {
           </div>
         </div>
       </div>
+
+      {/* ── Performance Optimizer ── */}
+      <PerformanceOptimizer currentScore={score} />
 
       {/* ── Remediation Steps Section ── */}
       {remediations.length > 0 && (
