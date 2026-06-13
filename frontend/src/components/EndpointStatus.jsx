@@ -1,6 +1,6 @@
 export default function EndpointStatus({ snapshot }) {
   return (
-    <article className="panel">
+    <article className="panel grid-cell-endpoint">
       <div className="panel-header">
         <div>
           <span className="eyebrow">Endpoint Status</span>

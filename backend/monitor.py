@@ -166,7 +166,30 @@ class SystemMonitor:
         self.last_io_time = now
 
         memory = psutil.virtual_memory()
+        swap = psutil.swap_memory()
         disk_usage = psutil.disk_usage(Path.home().anchor or "/")
+        uptime_seconds = max(time.time() - psutil.boot_time(), 0)
+
+        cpu_temp = None
+        gpu_temp = None
+        try:
+            for sensor_name, entries in (psutil.sensors_temperatures() or {}).items():
+                for entry in entries:
+                    label = (entry.label or sensor_name).lower()
+                    if cpu_temp is None and ("cpu" in label or "core" in label or "package" in label):
+                        cpu_temp = entry.current
+                    if gpu_temp is None and "gpu" in label:
+                        gpu_temp = entry.current
+        except (AttributeError, OSError):
+            pass
+
+        storage_percent = round(disk_usage.percent, 1)
+        if storage_percent >= 95:
+            disk_health = "Critical"
+        elif storage_percent >= 85:
+            disk_health = "Warning"
+        else:
+            disk_health = "Healthy"
 
         return {
             "timestamp": now.isoformat(),
@@ -174,9 +197,13 @@ class SystemMonitor:
             "memory": round(memory.percent, 1),
             "memory_used_gb": round(memory.used / (1024 ** 3), 2),
             "memory_total_gb": round(memory.total / (1024 ** 3), 2),
+            "swap_percent": round(swap.percent, 1),
+            "swap_used_gb": round(swap.used / (1024 ** 3), 2),
+            "swap_total_gb": round(swap.total / (1024 ** 3), 2),
             "storage_used_gb": round(disk_usage.used / (1024 ** 3), 1),
             "storage_total_gb": round(disk_usage.total / (1024 ** 3), 1),
-            "storage_percent": round(disk_usage.percent, 1),
+            "storage_percent": storage_percent,
+            "disk_health": disk_health,
             "processes": len(psutil.pids()),
             "connections": connections,
             "disk_read_mb_s": round(max(disk_read_rate, 0), 2),
@@ -185,6 +212,9 @@ class SystemMonitor:
             "download_kb_s": round(max(download_rate, 0), 1),
             "hostname": platform.node(),
             "os": f"{platform.system()} {platform.release()}",
+            "uptime_seconds": round(uptime_seconds),
+            "cpu_temp": round(cpu_temp, 1) if cpu_temp is not None else None,
+            "gpu_temp": round(gpu_temp, 1) if gpu_temp is not None else None,
         }
 
     def scan_processes(self):

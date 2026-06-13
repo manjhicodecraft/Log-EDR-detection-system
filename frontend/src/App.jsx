@@ -1,7 +1,9 @@
 import Header from "./components/Header.jsx";
 import SecurityIndex from "./components/SecurityIndex.jsx";
 import EndpointStatus from "./components/EndpointStatus.jsx";
-import StatCards from "./components/StatCards.jsx";
+import { AlertsStatCard, AIAttributedStatCard, USBEventsStatCard } from "./components/StatCards.jsx";
+import SystemHealth from "./components/SystemHealth.jsx";
+import NetworkSecurity from "./components/NetworkSecurity.jsx";
 import LiveThreatFeed from "./components/LiveThreatFeed.jsx";
 import ThreatSummary from "./components/ThreatSummary.jsx";
 import AlertTimeline from "./components/AlertTimeline.jsx";
@@ -34,10 +36,14 @@ export default function App() {
     <>
       <Header />
       <main className="dashboard">
-        <section className="grid-hero">
+        <section className="grid-dashboard">
           <SecurityIndex overview={overview} />
           <EndpointStatus snapshot={snapshot} />
-          <StatCards overview={overview} />
+          <AlertsStatCard overview={overview} />
+          <AIAttributedStatCard overview={overview} />
+          <SystemHealth snapshot={snapshot} />
+          <USBEventsStatCard overview={overview} />
+          <NetworkSecurity snapshot={snapshot} overview={overview} alerts={alerts} />
         </section>
 
         <section className="grid-main">
