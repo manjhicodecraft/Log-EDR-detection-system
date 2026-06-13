@@ -326,6 +326,12 @@ body {
   flex-direction: column;
 }
 
+.panel-log {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .mini-process-strip {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -361,7 +367,10 @@ body {
 }
 
 .panel-log .scroll-area {
-  max-height: 320px;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 60vh;
+  overflow: auto;
 }
 
 .log-stats {
@@ -394,7 +403,7 @@ body {
 }
 
 .log-stream-wrap {
-  max-height: 340px;
+  max-height: 60vh;
 }
 
 .log-stream-table {
@@ -1717,7 +1726,17 @@ td {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
   border-top: 1px solid rgba(94, 168, 255, 0.06);
+  transition: max-height 0.35s ease, opacity 0.25s ease;
+}
+
+.remediation-phases.open {
+  max-height: 1200px;
+  overflow-y: auto;
+  opacity: 1;
 }
 
 .remediation-phase {

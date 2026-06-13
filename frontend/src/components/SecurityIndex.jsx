@@ -143,51 +143,48 @@ export default function SecurityIndex({ overview }) {
                     </span>
                   </button>
 
-                  {expanded && (
-                    <div className="remediation-phases">
-                      {/* Context steps from event metadata */}
-                      {item.context?.length > 0 && (
-                        <div className="remediation-phase remediation-phase-context">
-                          <div className="remediation-phase-header">
-                            <span className="remediation-phase-icon">📋</span>
-                            <span>DETECTED CONTEXT</span>
+                  <div className={`remediation-phases ${expanded ? "open" : ""}`}>
+                    {item.context?.length > 0 && (
+                      <div className="remediation-phase remediation-phase-context">
+                        <div className="remediation-phase-header">
+                          <span className="remediation-phase-icon">📋</span>
+                          <span>DETECTED CONTEXT</span>
+                        </div>
+                        <ul className="remediation-steps remediation-steps-context">
+                          {item.context.map((step, sIdx) => (
+                            <li key={sIdx}><MarkdownText text={step} /></li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {['immediate', 'investigate', 'prevent'].map((phase) => {
+                      const steps = item[phase];
+                      if (!steps || steps.length === 0) return null;
+                      const cfg = PHASE_CONFIG[phase];
+
+                      return (
+                        <div
+                          key={phase}
+                          className="remediation-phase"
+                          style={{
+                            borderLeftColor: cfg.color,
+                            background: cfg.bg,
+                          }}
+                        >
+                          <div className="remediation-phase-header" style={{ color: cfg.color }}>
+                            <span className="remediation-phase-icon">{cfg.icon}</span>
+                            <span>{cfg.label}</span>
                           </div>
-                          <ul className="remediation-steps remediation-steps-context">
-                            {item.context.map((step, sIdx) => (
+                          <ol className="remediation-steps">
+                            {steps.map((step, sIdx) => (
                               <li key={sIdx}><MarkdownText text={step} /></li>
                             ))}
-                          </ul>
+                          </ol>
                         </div>
-                      )}
-
-                      {/* 3-phase steps */}
-                      {["immediate", "investigate", "prevent"].map((phase) => {
-                        const steps = item[phase];
-                        if (!steps || steps.length === 0) return null;
-                        const cfg = PHASE_CONFIG[phase];
-                        return (
-                          <div
-                            key={phase}
-                            className="remediation-phase"
-                            style={{
-                              borderLeftColor: cfg.color,
-                              background: cfg.bg,
-                            }}
-                          >
-                            <div className="remediation-phase-header" style={{ color: cfg.color }}>
-                              <span className="remediation-phase-icon">{cfg.icon}</span>
-                              <span>{cfg.label}</span>
-                            </div>
-                            <ol className="remediation-steps">
-                              {steps.map((step, sIdx) => (
-                                <li key={sIdx}><MarkdownText text={step} /></li>
-                              ))}
-                            </ol>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                      );
+                    })}
+                  </div>
                 </div>
               );
             })}
