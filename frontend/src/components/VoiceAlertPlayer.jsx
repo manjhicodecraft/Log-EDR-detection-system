@@ -1,8 +1,5 @@
 import { useState, useRef, useEffect, forwardRef, useImperativeHandle, useCallback } from "react";
 
-/* ── Speech Recognition setup (Web Speech API) ── */
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
 const LANG_LOCALES = {
   en: "en-IN",
   hi: "hi-IN",
@@ -22,94 +19,24 @@ const VoiceAlertPlayer = forwardRef(function VoiceAlertPlayer({ languages, voice
   const [selectedLang, setSelectedLang] = useState("en");
   const [playing, setPlaying] = useState(false);
   const [status, setStatus] = useState("");
-  const [question, setQuestion] = useState("");
-  const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [listening, setListening] = useState(false);
-
-  // Mode: "chat" | "investigate" | "guided" | "verify"
-  const [mode, setMode] = useState("chat");
-
-  // Guided remediation state
-  const [guidedState, setGuidedState] = useState({
-    currentStep: 0,
-    totalSteps: 0,
-    completedSteps: [],
-    scoreAtStart: 0,
-    active: false,
-  });
+  const [spokenText, setSpokenText] = useState("");
 
   const audioRef = useRef(null);
-  const chatEndRef = useRef(null);
-  const inputRef = useRef(null);
-  const recognitionRef = useRef(null);
+  const keepAliveRef = useRef(null);
 
   const useBrowserTTS = !voiceAvailable;
-  // Determine actual TTS provider for the selected language
   const activeTTSProvider = (selectedLang === "en" || selectedLang === "hi")
     ? (voiceAvailable ? "Sarvam AI" : "Browser TTS")
     : "Browser TTS";
 
-  // Expose play() to parent
   useImperativeHandle(ref, () => ({
     play: () => summarizeThreats(),
   }));
 
-  // Auto-scroll chat to bottom
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
-
-  // ── Speech Recognition ──
-  const startListening = useCallback(() => {
-    if (!SpeechRecognition) {
-      setStatus("Speech recognition not supported in this browser");
-      return;
-    }
-    const recognition = new SpeechRecognition();
-    recognition.lang = LANG_LOCALES[selectedLang] || "en-IN";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    recognition.continuous = false;
-
-    recognition.onstart = () => {
-      setListening(true);
-      setStatus("Listening...");
-    };
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      setQuestion(transcript);
-      setListening(false);
-      setStatus("");
-      // Auto-send after short delay
-      setTimeout(() => {
-        const fakeEvent = { preventDefault: () => {} };
-        // We set question then trigger send
-        sendQuestion(transcript);
-      }, 300);
-    };
-    recognition.onerror = (event) => {
-      setListening(false);
-      setStatus(event.error === "no-speech" ? "No speech detected" : `Mic error: ${event.error}`);
-    };
-    recognition.onend = () => setListening(false);
-
-    recognitionRef.current = recognition;
-    recognition.start();
-  }, [selectedLang]);
-
-  const stopListening = useCallback(() => {
-    recognitionRef.current?.stop();
-    setListening(false);
-    setStatus("");
-  }, []);
-
-  // ── Pre-warm speech synthesis on first user interaction ──
   useEffect(() => {
     const warmTTS = () => {
-      // Force browser to load voices
       window.speechSynthesis.getVoices();
-      // Remove listeners after first trigger
       document.removeEventListener("click", warmTTS);
       document.removeEventListener("keydown", warmTTS);
     };
@@ -121,40 +48,23 @@ const VoiceAlertPlayer = forwardRef(function VoiceAlertPlayer({ languages, voice
     };
   }, []);
 
-  // ── Chrome keep-alive timer (prevents 15s pause bug) ──
-  const keepAliveRef = useRef(null);
-
-  // ── Find best available browser voice for a language ──
   const findBrowserVoice = useCallback((langCode) => {
     const voices = window.speechSynthesis.getVoices();
     if (!voices.length) return null;
-
-    // Priority 1: Exact match (e.g., "ta-IN")
     let voice = voices.find((v) => v.lang === langCode);
     if (voice) return voice;
-
-    // Priority 2: Language prefix match (e.g., "ta" matches "ta-IN" or "ta")
     const langPrefix = langCode.split("-")[0];
     voice = voices.find((v) => v.lang.startsWith(langPrefix));
     if (voice) return voice;
-
-    // Priority 3: Hindi fallback (widely supported in Indian browsers)
     voice = voices.find((v) => v.lang.startsWith("hi"));
     if (voice) return voice;
-
-    // Priority 4: English India fallback
     voice = voices.find((v) => v.lang === "en-IN");
     if (voice) return voice;
-
-    // Priority 5: Any English voice
     voice = voices.find((v) => v.lang.startsWith("en"));
     if (voice) return voice;
-
-    // Last resort: first available voice
     return voices[0] || null;
   }, []);
 
-  // ── Audio playback ──
   const playAudio = useCallback((text, audioBase64, format, provider, langCode) => {
     stopAudio();
     setPlaying(true);
@@ -167,29 +77,22 @@ const VoiceAlertPlayer = forwardRef(function VoiceAlertPlayer({ languages, voice
       audio.play().catch(() => { setPlaying(false); setStatus("Audio autoplay blocked"); });
       setStatus(`Playing via ${provider}`);
     } else {
-      // Browser TTS fallback
       const resolvedLang = langCode || LANG_LOCALES[selectedLang] || "en-IN";
-
       const doSpeak = () => {
         window.speechSynthesis.cancel();
         if (keepAliveRef.current) clearInterval(keepAliveRef.current);
-
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = resolvedLang;
         utterance.rate = 0.9;
         utterance.pitch = 1.0;
         utterance.volume = 1.0;
-
-        // Find and assign the best available voice
         const voice = findBrowserVoice(resolvedLang);
         if (voice) {
           utterance.voice = voice;
-          utterance.lang = voice.lang; // Use voice's actual lang
+          utterance.lang = voice.lang;
         }
-
         utterance.onstart = () => {
           setStatus(`Speaking (${voice?.lang || resolvedLang})`);
-          // Chrome keep-alive: resume every 10s to prevent the 15s pause bug
           keepAliveRef.current = setInterval(() => {
             if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
               window.speechSynthesis.pause();
@@ -205,16 +108,10 @@ const VoiceAlertPlayer = forwardRef(function VoiceAlertPlayer({ languages, voice
         utterance.onerror = (e) => {
           if (keepAliveRef.current) clearInterval(keepAliveRef.current);
           setPlaying(false);
-          if (e.error !== "canceled") {
-            setStatus(`TTS error: ${e.error}`);
-          }
+          if (e.error !== "canceled") setStatus(`TTS error: ${e.error}`);
         };
-
-        // Speak after a short delay to ensure cancel is processed
         setTimeout(() => window.speechSynthesis.speak(utterance), 100);
       };
-
-      // Voices may not be loaded yet — wait for them
       if (window.speechSynthesis.getVoices().length > 0) {
         doSpeak();
       } else {
@@ -222,14 +119,10 @@ const VoiceAlertPlayer = forwardRef(function VoiceAlertPlayer({ languages, voice
           doSpeak();
           window.speechSynthesis.onvoiceschanged = null;
         };
-        // Fallback timeout in case voiceschanged never fires
         setTimeout(() => {
-          if (window.speechSynthesis.getVoices().length === 0) {
-            doSpeak(); // Try anyway
-          }
+          if (window.speechSynthesis.getVoices().length === 0) doSpeak();
         }, 1000);
       }
-
       setStatus(`Browser TTS (${resolvedLang})`);
     }
   }, [selectedLang, findBrowserVoice]);
@@ -250,281 +143,44 @@ const VoiceAlertPlayer = forwardRef(function VoiceAlertPlayer({ languages, voice
       if (keepAliveRef.current) clearInterval(keepAliveRef.current);
       window.speechSynthesis?.cancel();
       if (audioRef.current) audioRef.current.pause();
-      recognitionRef.current?.stop();
     };
   }, []);
 
-  // ── Helper: add assistant message + play audio ──
-  function handleResponse(data, msgMode) {
-    const responseText = data.response || "I couldn't process that.";
-    const msg = {
-      role: "assistant",
-      text: responseText,
-      audio_base64: data.audio_base64,
-      format: data.format,
-      provider: data.provider,
-      lang_code: data.lang_code,
-      ai_provider: data.ai_provider,
-      mode: msgMode || data.mode || "chat",
-      current_step: data.current_step,
-      total_steps: data.total_steps,
-      step_instruction: data.step_instruction,
-      is_complete: data.is_complete,
-      is_resolved: data.is_resolved,
-      remaining_alerts: data.remaining_alerts,
-      timestamp: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, msg]);
-    playAudio(responseText, data.audio_base64, data.format, data.provider, data.lang_code);
-    return msg;
-  }
-
-  // ── Build history for API calls ──
-  function getHistory() {
-    return messages.slice(-8).map((m) => ({ role: m.role, text: m.text }));
-  }
-
-  // ── Send question (chat mode or guided mode) ──
-  async function sendQuestion(text) {
-    const input = (text || question).trim();
-    if (!input || loading) return;
-
-    const userMsg = { role: "user", text: input, timestamp: new Date().toISOString() };
-    setMessages((prev) => [...prev, userMsg]);
-    setQuestion("");
-    setLoading(true);
-    setStatus("Thinking...");
-
-    try {
-      let endpoint, body;
-
-      if (mode === "guided" && guidedState.active) {
-        // Send to guided remediation endpoint
-        endpoint = "/api/voice/guide";
-        body = {
-          input: input,
-          language: selectedLang,
-          current_step: guidedState.currentStep,
-          completed_steps: guidedState.completedSteps,
-          history: getHistory(),
-        };
-      } else if (mode === "investigate") {
-        endpoint = "/api/voice/investigate";
-        body = {
-          question: input,
-          language: selectedLang,
-          history: getHistory(),
-        };
-      } else {
-        endpoint = "/api/voice/converse";
-        body = {
-          question: input,
-          language: selectedLang,
-          history: getHistory(),
-        };
-      }
-
-      const data = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      }).then((r) => r.json());
-
-      const msg = handleResponse(data, mode);
-
-      // Update guided state if in guided mode
-      if (mode === "guided" && data.current_step !== undefined) {
-        setGuidedState((prev) => ({
-          ...prev,
-          currentStep: data.current_step,
-          totalSteps: data.total_steps || prev.totalSteps,
-          completedSteps: data.completed_steps || prev.completedSteps,
-        }));
-      }
-
-      // If guided step was advanced and is now complete, suggest verification
-      if (data.is_complete && mode === "guided") {
-        // Auto-transition hint is in the response text
-      }
-    } catch {
-      setMessages((prev) => [...prev, {
-        role: "assistant",
-        text: "I'm having trouble connecting. Please check if the backend is running.",
-        timestamp: new Date().toISOString(),
-      }]);
-      setStatus("Connection failed");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // Form submit handler
-  async function askQuestion(e) {
-    if (e) e.preventDefault();
-    sendQuestion();
-  }
-
-  // ── Mode switching ──
-  function switchMode(newMode) {
-    if (newMode === mode) return;
-    setMode(newMode);
-    if (newMode === "guided" && !guidedState.active) {
-      // Start guided mode
-      const scoreAtStart = overview?.score ?? 0;
-      setGuidedState({ currentStep: 0, totalSteps: 0, completedSteps: [], scoreAtStart, active: true });
-      // Auto-send "start" to get first step
-      setTimeout(() => sendGuidedStart(), 100);
-    }
-  }
-
-  async function sendGuidedStart() {
-    if (loading) return;
-    const userMsg = {
-      role: "user",
-      text: selectedLang === "hi" ? "Mujhe fix karne mein madad karo." : "Help me fix this.",
-      timestamp: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, userMsg]);
-    setLoading(true);
-    setStatus("Preparing remediation plan...");
-
-    try {
-      const data = await fetch("/api/voice/guide", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          input: "start guided remediation",
-          language: selectedLang,
-          current_step: 0,
-          completed_steps: [],
-          history: getHistory(),
-        }),
-      }).then((r) => r.json());
-
-      handleResponse(data, "guided");
-      if (data.current_step !== undefined) {
-        setGuidedState((prev) => ({
-          ...prev,
-          currentStep: data.current_step,
-          totalSteps: data.total_steps || prev.totalSteps,
-          completedSteps: data.completed_steps || [],
-        }));
-      }
-    } catch {
-      setMessages((prev) => [...prev, {
-        role: "assistant", text: "Unable to start guided remediation.", timestamp: new Date().toISOString(),
-      }]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // ── Investigation mode ──
-  async function startInvestigation() {
-    switchMode("investigate");
-    if (loading) return;
-    setLoading(true);
-    setStatus("Investigating...");
-
-    const userMsg = {
-      role: "user",
-      text: selectedLang === "hi" ? "Is khatre ki jaanch karo." : "Investigate this threat.",
-      timestamp: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, userMsg]);
-
-    try {
-      const data = await fetch("/api/voice/investigate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          question: "Investigate all current threats and provide a detailed analysis.",
-          language: selectedLang,
-          history: getHistory(),
-        }),
-      }).then((r) => r.json());
-
-      handleResponse(data, "investigation");
-    } catch {
-      setMessages((prev) => [...prev, {
-        role: "assistant", text: "Investigation failed. Please try again.", timestamp: new Date().toISOString(),
-      }]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // ── Verification ──
-  async function startVerification() {
-    if (loading) return;
-    setLoading(true);
-    setStatus("Verifying resolution...");
-
-    const userMsg = {
-      role: "user",
-      text: selectedLang === "hi" ? "Verify karo ki khatra tal gaya hai." : "Verify the threat is resolved.",
-      timestamp: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, userMsg]);
-
-    try {
-      const data = await fetch("/api/voice/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          language: selectedLang,
-          previous_score: guidedState.scoreAtStart || overview?.score || 0,
-          history: getHistory(),
-        }),
-      }).then((r) => r.json());
-
-      handleResponse(data, "verification");
-    } catch {
-      setMessages((prev) => [...prev, {
-        role: "assistant", text: "Verification failed. Please try again.", timestamp: new Date().toISOString(),
-      }]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // ── Summarize threats ──
   async function summarizeThreats() {
     if (loading) return;
     setLoading(true);
     setStatus("Analyzing threats...");
-    setMode("chat");
 
     const score = overview?.score ?? 0;
     const alertCount = alerts?.length ?? 0;
-    const summaryQuestion = `Give me a quick summary of the current security status. Risk score is ${score} with ${alertCount} alerts.`;
-
-    const userMsg = {
-      role: "user",
-      text: selectedLang === "hi" ? "System ka suraksha status batao." : "Summarize current security status.",
-      timestamp: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, userMsg]);
 
     try {
-      const data = await fetch("/api/voice/converse", {
+      const geminiText = geminiAnalysis?.analysis || "";
+      const summaryText = geminiText
+        ? `Gemini analysis summary: ${geminiText.slice(0, 500)}. Overall risk score is ${score} with ${alertCount} alerts.`
+        : `Current security status: Risk score is ${score} with ${alertCount} alerts. No Gemini analysis available.`;
+
+      const data = await fetch("/api/voice/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: summaryQuestion, language: selectedLang, history: [] }),
+        body: JSON.stringify({ text: summaryText, language: selectedLang }),
       }).then((r) => r.json());
-      handleResponse(data, "chat");
+
+      const responseText = data.response || data.text || summaryText;
+      setSpokenText(responseText);
+      playAudio(responseText, data.audio_base64, data.format, data.provider, data.lang_code);
     } catch {
-      setMessages((prev) => [...prev, {
-        role: "assistant", text: "Unable to generate summary.", timestamp: new Date().toISOString(),
-      }]);
+      setStatus("Summary unavailable — playing via browser TTS");
+
+      const fallbackText = geminiAnalysis?.analysis
+        ? `Gemini analysis: ${geminiAnalysis.analysis.slice(0, 300)}. Risk score is ${score}.`
+        : `Security summary not available. Risk score is ${score} with ${alertCount} alerts.`;
+
+      setSpokenText(fallbackText);
+      playAudio(fallbackText, null, "browser-fallback", "Browser TTS", selectedLang);
     } finally {
       setLoading(false);
     }
-  }
-
-  function replayMessage(msg) {
-    if (playing) { stopAudio(); return; }
-    playAudio(msg.text, msg.audio_base64, msg.format, msg.provider, msg.lang_code);
   }
 
   const langList = languages || [
@@ -535,34 +191,24 @@ const VoiceAlertPlayer = forwardRef(function VoiceAlertPlayer({ languages, voice
     { code: "te", label: "Telugu", native: "తెలుగు" },
   ];
 
-  const suggestions = selectedLang === "en"
-    ? ["What's the risk level?", "Any threats detected?", "Investigate threats", "Help me fix this"]
-    : selectedLang === "hi"
-    ? ["Risk level kya hai?", "Koi khatra hai?", "Khatre ki jaanch karo", "Fix karne mein madad karo"]
-    : ["What's the risk?", "Any threats?", "Investigate", "Help me fix"];
-
-  const hasThreats = (overview?.score ?? 0) >= 30 || (overview?.critical ?? 0) > 0;
-
   return (
     <article className="panel panel-voice">
       <div className="panel-header">
         <div>
-          <span className="eyebrow">AI Security Analyst</span>
+          <span className="eyebrow">AI Security Analyst — Voice Summary</span>
           <h2>Trinetra Voice</h2>
         </div>
         <div className="voice-header-badges">
-          {mode !== "chat" && (
-            <span className={`voice-mode-badge voice-mode-${mode}`}>
-              {mode === "investigate" ? "Investigating" : mode === "guided" ? "Remediation" : "Verifying"}
-            </span>
-          )}
           <span className={`ai-chip ${activeTTSProvider === "Browser TTS" ? "voice-chip-fallback" : ""}`}>
             {activeTTSProvider}
           </span>
         </div>
       </div>
 
-      {/* Language selector */}
+      <p className="voice-desc">
+        Summarizes Gemini threat analysis in your preferred language.
+      </p>
+
       <div className="voice-lang-select">
         {langList.map((lang) => (
           <button key={lang.code}
@@ -574,152 +220,30 @@ const VoiceAlertPlayer = forwardRef(function VoiceAlertPlayer({ languages, voice
         ))}
       </div>
 
-      {/* Mode tabs */}
-      <div className="voice-mode-tabs">
-        <button className={`voice-mode-tab ${mode === "chat" ? "active" : ""}`} onClick={() => switchMode("chat")}>Chat</button>
-        <button className={`voice-mode-tab ${mode === "investigate" ? "active" : ""}`} onClick={startInvestigation}>Investigate</button>
-        {hasThreats && (
-          <button className={`voice-mode-tab ${mode === "guided" ? "active" : ""}`} onClick={() => switchMode("guided")}>Fix It</button>
-        )}
-        {(guidedState.active || mode === "guided") && (
-          <button className="voice-mode-tab voice-verify-tab" onClick={startVerification}>Verify</button>
+      <div className="voice-controls">
+        <button className="voice-play-btn" onClick={summarizeThreats} disabled={loading}>
+          {loading ? "⟳ Summarizing..." : playing ? "🔊 Playing..." : "🎙️ Summarize Threats"}
+        </button>
+        {playing && (
+          <button className="voice-play-btn voice-playing" onClick={stopAudio}>
+            ⏹ Stop
+          </button>
         )}
       </div>
 
-      {/* Guided step progress bar */}
-      {mode === "guided" && guidedState.active && guidedState.totalSteps > 0 && (
-        <div className="voice-step-progress">
-          <div className="voice-step-bar">
-            <div className="voice-step-fill" style={{ width: `${(guidedState.currentStep / guidedState.totalSteps) * 100}%` }} />
-          </div>
-          <span className="voice-step-label">
-            Step {Math.min(guidedState.currentStep + 1, guidedState.totalSteps)} / {guidedState.totalSteps}
-          </span>
+      {status && <div className="voice-status">{status}</div>}
+
+      {spokenText && (
+        <div className="voice-spoken-text">
+          <span className="eyebrow">Last Summary</span>
+          <p>{spokenText}</p>
         </div>
       )}
-
-      {/* Chat messages */}
-      <div className="voice-chat-area">
-        {messages.length === 0 ? (
-          <div className="voice-welcome">
-            <div className="voice-welcome-icon">🎙️</div>
-            <p className="voice-welcome-title">
-              {selectedLang === "hi" ? "Trinetra Security Analyst" : "Trinetra Security Analyst"}
-            </p>
-            <p className="voice-welcome-desc">
-              {selectedLang === "hi"
-                ? "Main aapka AI security analyst hoon. Khatre ki jaanch, explanation, investigation aur remediation mein madad kar sakta hoon. Mic button dabake bol sakte ho ya type kar sakte ho."
-                : "I'm your AI security analyst. I can explain threats, investigate incidents, guide you through remediation step-by-step, and verify when issues are resolved. Speak or type your question."}
-            </p>
-            <div className="voice-suggestions">
-              {suggestions.map((s) => (
-                <button key={s} className="voice-suggestion-chip"
-                  onClick={() => {
-                    if (s.toLowerCase().includes("investigate")) { startInvestigation(); return; }
-                    if (s.toLowerCase().includes("fix")) { switchMode("guided"); return; }
-                    setQuestion(s);
-                    setTimeout(() => inputRef.current?.focus(), 50);
-                  }}>
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          messages.map((msg, idx) => (
-            <div key={idx} className={`voice-msg voice-msg-${msg.role}`}>
-              <div className="voice-msg-avatar">{msg.role === "user" ? "👤" : "🛡️"}</div>
-              <div className="voice-msg-content">
-                <div className="voice-msg-header">
-                  <span>{msg.role === "user" ? "You" : "Trinetra"}</span>
-                  {msg.mode && msg.mode !== "chat" && (
-                    <span className={`voice-msg-mode-tag voice-mode-tag-${msg.mode}`}>{msg.mode}</span>
-                  )}
-                  {msg.role === "assistant" && msg.ai_provider && (
-                    <span className="voice-msg-provider">{msg.ai_provider}</span>
-                  )}
-                </div>
-                <p className="voice-msg-text">{msg.text}</p>
-                {/* Step instruction card for guided mode */}
-                {msg.mode === "guided" && msg.step_instruction && !msg.is_complete && (
-                  <div className="voice-step-card">
-                    <div className="voice-step-card-label">Current Step</div>
-                    <div className="voice-step-card-text">{msg.step_instruction}</div>
-                    <div className="voice-step-card-actions">
-                      <button className="voice-step-done-btn" onClick={() => sendQuestion("Done. What's next?")} disabled={loading}>
-                        Done - Next Step
-                      </button>
-                    </div>
-                  </div>
-                )}
-                {/* Verification result card */}
-                {msg.mode === "verification" && (
-                  <div className={`voice-verify-card ${msg.is_resolved ? "voice-verify-ok" : "voice-verify-warn"}`}>
-                    <span className="voice-verify-icon">{msg.is_resolved ? "✅" : "⚠️"}</span>
-                    <span>{msg.is_resolved ? "Threat Resolved" : `${msg.remaining_alerts || 0} alerts remaining`}</span>
-                  </div>
-                )}
-                {msg.role === "assistant" && (
-                  <button className={`voice-msg-replay ${playing ? "voice-playing-small" : ""}`}
-                    onClick={() => replayMessage(msg)} title={playing ? "Stop" : "Replay audio"}>
-                    {playing ? "⏹ Stop" : "🔊 Replay"}
-                  </button>
-                )}
-              </div>
-            </div>
-          ))
-        )}
-        {loading && (
-          <div className="voice-msg voice-msg-assistant">
-            <div className="voice-msg-avatar">🛡️</div>
-            <div className="voice-msg-content">
-              <div className="voice-typing"><span className="voice-typing-dot" /><span className="voice-typing-dot" /><span className="voice-typing-dot" /></div>
-            </div>
-          </div>
-        )}
-        <div ref={chatEndRef} />
-      </div>
-
-      {/* Status bar */}
-      {status && <div className="voice-status-bar">{status}</div>}
-
-      {/* Quick actions */}
-      <div className="voice-quick-actions">
-        <button className="voice-quick-btn" onClick={summarizeThreats} disabled={loading}>🛡️ Summarize</button>
-        <button className="voice-quick-btn" onClick={startInvestigation} disabled={loading}>🔍 Investigate</button>
-        {hasThreats && <button className="voice-quick-btn" onClick={() => switchMode("guided")} disabled={loading}>🔧 Fix It</button>}
-        {guidedState.active && <button className="voice-quick-btn voice-verify-btn" onClick={startVerification} disabled={loading}>✅ Verify</button>}
-        {playing && <button className="voice-quick-btn voice-stop-btn" onClick={stopAudio}>⏹ Stop</button>}
-      </div>
-
-      {/* Input area with microphone */}
-      <form className="voice-input-form" onSubmit={askQuestion}>
-        <button type="button"
-          className={`voice-mic-btn ${listening ? "voice-mic-active" : ""}`}
-          onClick={listening ? stopListening : startListening}
-          disabled={loading || !SpeechRecognition}
-          title={listening ? "Stop listening" : "Speak your question"}>
-          {listening ? "🔴" : "🎤"}
-        </button>
-        <input ref={inputRef} className="voice-input" value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          placeholder={
-            mode === "guided"
-              ? (selectedLang === "hi" ? "Step complete bolne ke liye mic dabayein..." : "Say 'done' when step is complete...")
-              : selectedLang === "hi"
-              ? "Suraksha ke baare mein poochho ya mic dabao..."
-              : "Ask about security, threats, or say 'investigate'..."
-          }
-          disabled={loading} />
-        <button type="submit" className="voice-send-btn" disabled={loading || !question.trim()}>
-          {loading ? "..." : "▶"}
-        </button>
-      </form>
 
       <div className="voice-footer">
         <span>AI Security Analyst</span>
         <strong>{langList.length} Languages</strong>
-        <span>{mode === "guided" ? "Guided Mode" : mode === "investigate" ? "Investigation" : "Conversational"}</span>
+        <span>Voice Summary</span>
       </div>
     </article>
   );

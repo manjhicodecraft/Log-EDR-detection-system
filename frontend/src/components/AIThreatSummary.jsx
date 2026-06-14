@@ -4,6 +4,7 @@ import MarkdownText from "./MarkdownText.jsx";
 export default function AIThreatSummary({ geminiAnalysis, mitreMapping, onSpeak }) {
   const [refreshing, setRefreshing] = useState(false);
   const [showMitre, setShowMitre] = useState(false);
+  const [showFullError, setShowFullError] = useState(false);
   const [geminiStatus, setGeminiStatus] = useState(null);
 
   async function fetchStatus() {
@@ -103,13 +104,25 @@ export default function AIThreatSummary({ geminiAnalysis, mitreMapping, onSpeak 
 
       {/* ── Error / Notice ── */}
       {error && (
-        <p className="gemini-notice">{error}</p>
+        <div className="gemini-error-box">
+          <pre className="gemini-error-pre">
+            {showFullError ? error : error.split("\n").slice(0, 3).join("\n")}
+            {!showFullError && error.split("\n").length > 3 && "…"}
+          </pre>
+          {error.split("\n").length > 3 && (
+            <button className="gemini-error-toggle" onClick={() => setShowFullError(!showFullError)}>
+              {showFullError ? "▲ Show Less" : "▼ Show More"}
+            </button>
+          )}
+        </div>
       )}
 
       {/* ── Analysis Text ── */}
       <div className="gemini-analysis">
         {analysis ? (
-          <MarkdownText text={analysis} />
+          <div className="gemini-analysis-inner">
+            <MarkdownText text={analysis} />
+          </div>
         ) : (
           <p className="muted">Waiting for threat analysis...</p>
         )}

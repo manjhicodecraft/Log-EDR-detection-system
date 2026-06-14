@@ -173,6 +173,8 @@ function createWindow() {
     },
   });
 
+  mainWindow.webContents.setZoomFactor(1.0);
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: "deny" };

@@ -110,7 +110,9 @@ export default function AIAnalysis({ analysis }) {
       </div>
       <div className="ai-text">
         {(analysis?.summary || ["Waiting for live telemetry."]).map((line, idx) => (
-          <MarkdownText key={`${idx}-${line.slice(0, 40)}`} text={line} />
+          <div key={`${idx}-${line.slice(0, 40)}`} className="ai-text-line">
+            <MarkdownText text={line} />
+          </div>
         ))}
       </div>
       <div className="recommendation-list">
@@ -120,7 +122,11 @@ export default function AIAnalysis({ analysis }) {
           </span>
         ))}
       </div>
-      {analysis?.error && analysis.error !== null ? <p className="ai-error">{analysis.error}</p> : null}
+      {analysis?.error && analysis.error !== null ? (
+        <div className="ai-error-box">
+          <pre className="ai-error-pre">{analysis.error}</pre>
+        </div>
+      ) : null}
       <form className="ai-question-form" onSubmit={askQuestion}>
         <input
           value={question}
