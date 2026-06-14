@@ -47,6 +47,8 @@ SARVAM_LANGUAGES = {
     "en": "en-IN",
     "hi": "hi-IN",
     "te": "te-IN",
+    "mr": "mr-IN",
+    "gu": "gu-IN",
 }
 
 # ── Pre-built translations for common alerts ──
@@ -72,6 +74,28 @@ ALERT_TRANSLATIONS = {
         "failed_login": "Chala failed login prayatnaalu gurthinchabaadayaayi. Brute force attack ayye avakaasam undi.",
         "system_normal": "System surakshitamga undi. Ee muppu ledu.",
         "incident_generated": "Incident report sidham chesamu. Dayachesi parishilinchandi.",
+    },
+    "mr": {
+        "critical_threat": "Gambhir suraksha dhwani detect zala ahe. Lavkar tapasani karne garjeche ahe.",
+        "high_threat": "Uchch staracha suraksha dhwani detect zala ahe. Kripya alert chee samiksha kara.",
+        "medium_threat": "Madhyam staracha suraksha alert detect zala ahe. Nirikshan karne garjeche ahe.",
+        "low_threat": "Khalchya staracha suraksha event detect zala ahe. Tatkal karyavahi garjeche nahi.",
+        "usb_detected": "USB device detect zale ahe. Kripya vaparnyapurvi scan kara.",
+        "ransomware": "Ransomware sarkhi karyavahi detect zali ahe. Lavkar network madhun disconnect kara.",
+        "failed_login": "Khup sare failed login prayatna detect zale aahet. Brute force attack shakya ahe.",
+        "system_normal": "System surakshit ahe. Koi dhwani detect zala nahi.",
+        "incident_generated": "Incident report taiyar ahe. Kripya review kara.",
+    },
+    "gu": {
+        "critical_threat": "Gambhir suraksha khatro detect thai gayo che. Tatkal tapas karvi jaruri che.",
+        "high_threat": "Uchch star nu suraksha khatru detect thai gayu che. Kripya alert ni samiksha karo.",
+        "medium_threat": "Madhyam star nu suraksha alert detect thai gayu che. Nirikshan karvu jaruri che.",
+        "low_threat": "Nimn star nu suraksha event detect thai gayu che. Koi tatkal karyavahi ni jarur nathi.",
+        "usb_detected": "USB device detect thai gayu che. Kripya vaparni pehela scan karo.",
+        "ransomware": "Ransomware jevi pravruti detect thai gayi che. Tatkal network mathi disconnect karo.",
+        "failed_login": "Ghna badha failed login prayatno detect thai gaya che. Brute force attack shakya che.",
+        "system_normal": "System surakshit che. Koi khatro detect thai gayo nathi.",
+        "incident_generated": "Incident report taiyar che. Kripya review karo.",
     },
 }
 
@@ -284,5 +308,7 @@ class SarvamVoiceModule:
         return [
             {"code": "en", "label": "English", "native": "English"},
             {"code": "hi", "label": "Hindi", "native": "हिन्दी"},
+            {"code": "mr", "label": "Marathi", "native": "मराठी"},
+            {"code": "gu", "label": "Gujarati", "native": "ગુજરાતી"},
             {"code": "te", "label": "Telugu", "native": "తెలుగు"},
         ]

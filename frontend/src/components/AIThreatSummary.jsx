@@ -1,15 +1,25 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import MarkdownText from "./MarkdownText.jsx";
 
 export default function AIThreatSummary({ geminiAnalysis, mitreMapping, onSpeak }) {
-  const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [showMitre, setShowMitre] = useState(false);
+  const [geminiStatus, setGeminiStatus] = useState(null);
+
+  async function fetchStatus() {
+    try {
+      const data = await fetch("/api/gemini/status").then((r) => r.json());
+      setGeminiStatus(data);
+    } catch {
+      /* ignore */
+    }
+  }
 
   async function fetchAnalysis() {
     setRefreshing(true);
     try {
       await fetch("/api/gemini/analyze").then((r) => r.json());
+      await fetchStatus(); // refresh status after re-analysis
     } catch {
       /* ignore */
     } finally {
@@ -17,27 +27,34 @@ export default function AIThreatSummary({ geminiAnalysis, mitreMapping, onSpeak 
     }
   }
 
+  // Fetch status on mount and every 30s
+  useEffect(() => {
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   const analysis = geminiAnalysis?.analysis || "";
   const provider = geminiAnalysis?.provider || "unknown";
   const model = geminiAnalysis?.model || "";
   const error = geminiAnalysis?.error;
+  const statusDetail = geminiAnalysis?.status || geminiStatus?.status_detail || "";
+  const fallbackReason = geminiAnalysis?.fallback_reason || geminiStatus?.init_error || geminiStatus?.last_error || "";
   const techniques = mitreMapping?.techniques || [];
   const tactics = mitreMapping?.active_tactics || [];
 
-  const providerColor =
-    provider === "gemini" ? "var(--mint)" : "var(--amber)";
+  const isGemini = provider === "gemini";
 
   return (
     <article className="panel panel-gemini">
       <div className="panel-header">
         <div>
-          <span className="eyebrow">Gemini Threat Intelligence</span>
+          <span className="eyebrow">
+            {isGemini ? "Gemini Threat Intelligence" : "AI Threat Intelligence"}
+          </span>
           <h2>AI Threat Analysis</h2>
         </div>
         <div className="ai-header-right">
-          <span className="ai-chip" style={{ color: providerColor, borderColor: providerColor }}>
-            {provider === "gemini" ? "Gemini Active" : "Local Fallback"}
-          </span>
           <button
             className="ai-refresh-btn"
             onClick={fetchAnalysis}
@@ -49,12 +66,44 @@ export default function AIThreatSummary({ geminiAnalysis, mitreMapping, onSpeak 
         </div>
       </div>
 
+      {/* ── Engine Status Indicator ── */}
+      <div className={`gemini-engine-status ${isGemini ? "gemini-engine-online" : "gemini-engine-fallback"}`}>
+        {isGemini ? (
+          <>
+            <div className="gemini-engine-row">
+              <span className="gemini-engine-dot gemini-dot-online" />
+              <span className="gemini-engine-title">Gemini Threat Intelligence Online</span>
+            </div>
+            <div className="gemini-engine-meta">
+              <span>Model: <strong>{model || geminiStatus?.model || "gemini"}</strong></span>
+              <span className="gemini-engine-sep">·</span>
+              <span>Analysis Status: <strong className="gemini-status-active">Active</strong></span>
+            </div>
+            {statusDetail && statusDetail.includes("recovered") && (
+              <p className="gemini-engine-note">{statusDetail}</p>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="gemini-engine-row">
+              <span className="gemini-engine-dot gemini-dot-fallback" />
+              <span className="gemini-engine-title">Local Threat Intelligence Active</span>
+            </div>
+            <div className="gemini-engine-meta">
+              <span>Model: <strong>Trinetra Algorithm</strong></span>
+              <span className="gemini-engine-sep">·</span>
+              <span>Reason: <strong className="gemini-status-fallback">{fallbackReason || "Gemini service unavailable"}</strong></span>
+            </div>
+            {statusDetail && (
+              <p className="gemini-engine-note">{statusDetail}</p>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* ── Error / Notice ── */}
       {error && (
         <p className="gemini-notice">{error}</p>
-      )}
-
-      {model && (
-        <p className="gemini-model">Model: {model}</p>
       )}
 
       {/* ── Analysis Text ── */}
@@ -62,7 +111,7 @@ export default function AIThreatSummary({ geminiAnalysis, mitreMapping, onSpeak 
         {analysis ? (
           <MarkdownText text={analysis} />
         ) : (
-          <p className="muted">Waiting for Gemini analysis...</p>
+          <p className="muted">Waiting for threat analysis...</p>
         )}
       </div>
 

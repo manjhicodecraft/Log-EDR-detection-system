@@ -163,12 +163,17 @@ def module_inventory() -> list[dict]:
         {
             "name": "Gemini Threat Intelligence",
             "status": "active" if gemini_analyzer.available else "limited",
-            "detail": "Gemini-powered threat summarization, MITRE ATT&CK mapping, explainable alerts, and incident reports.",
+            "detail": (
+                "Primary AI threat engine with 4-attempt retry logic (0s/3s/5s/10s backoff). "
+                "Provides analyst-level threat reports covering what/how/why/attack-path/impact/MITRE/actions, "
+                "SOC analyst voice briefings, and guided remediation. "
+                "Falls back to local Trinetra Algorithm only after all retries are exhausted."
+            ),
         },
         {
             "name": "Sarvam AI Voice Assistant",
             "status": "active" if voice_module.available else "limited",
-            "detail": "Multilingual voice notifications (English, Hindi, Telugu) via Sarvam AI TTS with browser fallback.",
+            "detail": "Conversational AI security analyst with multilingual voice (EN, HI, MR, GU, TE), speech-to-text, guided remediation, threat investigation, and resolution verification.",
         },
         {
             "name": "Performance Optimizer",
@@ -376,11 +381,16 @@ def report():
 
 @app.get("/api/gemini/status")
 def get_gemini_status():
-    """Check if Gemini API is configured and available."""
+    """Check if Gemini API is configured and available — includes retry/error detail."""
     return {
         "available": gemini_analyzer.available,
         "model": gemini_analyzer._model_name if gemini_analyzer._available else None,
         "provider": "gemini" if gemini_analyzer._available else "local-fallback",
+        "status_detail": gemini_analyzer.status_detail,
+        "init_error": gemini_analyzer.init_error,
+        "last_error": gemini_analyzer.last_error,
+        "retry_attempts": gemini_analyzer._retry_count,
+        "connectivity_ok": gemini_analyzer._connectivity_ok,
     }
 
 
@@ -449,6 +459,188 @@ def get_voice_languages():
     return {
         "languages": voice_module.get_supported_languages(),
         "available": voice_module.available,
+    }
+
+
+@app.post("/api/voice/converse")
+def voice_converse(payload: dict = Body(...)):
+    """Conversational AI voice response — ChatGPT Voice / Gemini Live style.
+
+    Takes user question + language, generates a natural voice-optimized
+    response via Gemini, then synthesizes speech via Sarvam AI TTS.
+    Returns both the spoken text and audio.
+    """
+    question = str(payload.get("question", "")).strip()
+    language = payload.get("language", "en")
+    conversation_history = payload.get("history", [])
+
+    if not question:
+        return {
+            "response": "I'm here to help. Ask me anything about your system security.",
+            "audio_base64": None,
+            "provider": "local-fallback",
+            "error": "No question provided",
+        }
+
+    events = db.list_events(200)
+    score = compute_risk_score(events)
+    processes = monitor.active_processes()
+    snapshot = monitor.last_snapshot
+
+    # Step 1: Generate conversational response via Gemini (with local fallback)
+    conv = gemini_analyzer.conversational_response(
+        user_question=question,
+        events=events,
+        score=score,
+        language=language,
+        processes=processes,
+        snapshot=snapshot,
+        conversation_history=conversation_history,
+    )
+
+    response_text = conv.get("response", "I'm here to help.")
+
+    # Step 2: Synthesize speech via Sarvam AI
+    speech = voice_module.synthesize_speech(response_text, language)
+
+    return {
+        "response": response_text,
+        "audio_base64": speech.get("audio_base64"),
+        "format": speech.get("format"),
+        "language": language,
+        "lang_code": speech.get("lang_code"),
+        "provider": speech.get("provider"),
+        "ai_provider": conv.get("provider"),
+        "ai_model": conv.get("model"),
+        "error": speech.get("error"),
+        "timestamp": speech.get("timestamp"),
+    }
+
+
+@app.post("/api/voice/investigate")
+def voice_investigate(payload: dict = Body(...)):
+    """Deep investigation: collect logs, correlate events, build timeline, explain findings."""
+    question = str(payload.get("question", "Investigate current threats")).strip()
+    language = payload.get("language", "en")
+    conversation_history = payload.get("history", [])
+
+    events = db.list_events(200)
+    score = compute_risk_score(events)
+    processes = monitor.active_processes()
+
+    result = gemini_analyzer.investigate_threat(
+        user_question=question,
+        events=events,
+        score=score,
+        language=language,
+        processes=processes,
+        conversation_history=conversation_history,
+    )
+
+    response_text = result.get("response", "Investigation complete.")
+    speech = voice_module.synthesize_speech(response_text, language)
+
+    return {
+        "response": response_text,
+        "audio_base64": speech.get("audio_base64"),
+        "format": speech.get("format"),
+        "language": language,
+        "lang_code": speech.get("lang_code"),
+        "provider": speech.get("provider"),
+        "ai_provider": result.get("provider"),
+        "ai_model": result.get("model"),
+        "mode": "investigation",
+        "findings_count": result.get("findings_count", 0),
+        "timeline_events": result.get("timeline_events", 0),
+        "error": speech.get("error"),
+        "timestamp": speech.get("timestamp"),
+    }
+
+
+@app.post("/api/voice/guide")
+def voice_guided_remediation(payload: dict = Body(...)):
+    """Guided step-by-step remediation with human-in-the-loop."""
+    user_input = str(payload.get("input", "start")).strip()
+    language = payload.get("language", "en")
+    current_step = int(payload.get("current_step", 0))
+    completed_steps = payload.get("completed_steps", [])
+    conversation_history = payload.get("history", [])
+
+    events = db.list_events(200)
+    score = compute_risk_score(events)
+
+    result = gemini_analyzer.guided_remediation(
+        user_input=user_input,
+        events=events,
+        score=score,
+        language=language,
+        current_step=current_step,
+        completed_steps=completed_steps,
+        conversation_history=conversation_history,
+    )
+
+    response_text = result.get("response", "Let me guide you through the next step.")
+    speech = voice_module.synthesize_speech(response_text, language)
+
+    return {
+        "response": response_text,
+        "audio_base64": speech.get("audio_base64"),
+        "format": speech.get("format"),
+        "language": language,
+        "lang_code": speech.get("lang_code"),
+        "provider": speech.get("provider"),
+        "ai_provider": result.get("provider"),
+        "ai_model": result.get("model"),
+        "mode": "guided_remediation",
+        "current_step": result.get("current_step", 0),
+        "total_steps": result.get("total_steps", 0),
+        "step_instruction": result.get("step_instruction"),
+        "is_complete": result.get("is_complete", False),
+        "step_advanced": result.get("step_advanced", False),
+        "completed_steps": result.get("completed_steps", []),
+        "error": speech.get("error"),
+        "timestamp": speech.get("timestamp"),
+    }
+
+
+@app.post("/api/voice/verify")
+def voice_verify_resolution(payload: dict = Body(...)):
+    """Verify threat resolution by rechecking logs and indicators."""
+    language = payload.get("language", "en")
+    previous_score = int(payload.get("previous_score", 0))
+    conversation_history = payload.get("history", [])
+
+    events = db.list_events(200)
+    score = compute_risk_score(events)
+
+    result = gemini_analyzer.verify_resolution(
+        events=events,
+        score=score,
+        language=language,
+        previous_score=previous_score,
+        conversation_history=conversation_history,
+    )
+
+    response_text = result.get("response", "Verification complete.")
+    speech = voice_module.synthesize_speech(response_text, language)
+
+    return {
+        "response": response_text,
+        "audio_base64": speech.get("audio_base64"),
+        "format": speech.get("format"),
+        "language": language,
+        "lang_code": speech.get("lang_code"),
+        "provider": speech.get("provider"),
+        "ai_provider": result.get("provider"),
+        "ai_model": result.get("model"),
+        "mode": "verification",
+        "is_resolved": result.get("is_resolved", False),
+        "partial_resolution": result.get("partial_resolution", False),
+        "current_score": result.get("current_score", score),
+        "previous_score": result.get("previous_score", previous_score),
+        "remaining_alerts": result.get("remaining_alerts", 0),
+        "error": speech.get("error"),
+        "timestamp": speech.get("timestamp"),
     }
 
 

@@ -67,6 +67,8 @@ export default function App() {
             languages={voiceLanguages}
             voiceAvailable={voiceAvailable}
             geminiAnalysis={geminiAnalysis}
+            overview={overview}
+            alerts={alerts}
           />
         </section>
 
