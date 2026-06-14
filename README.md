@@ -1,88 +1,147 @@
 # Trinetra Sentinel
 
-Offline-first local EDR prototype. It collects real endpoint telemetry, stores alerts
-in SQLite, scores suspicious behavior, and streams live detections to a SOC-style
-dashboard.
+**Desktop-native Endpoint Detection & Response (EDR)** — An offline-first Windows EDR
+application built with Electron + React + FastAPI. Collects real endpoint telemetry,
+detects threats using rule-based and ML engines, and provides a SOC-style desktop
+dashboard with voice-enabled AI analysis.
 
-## Run
+---
 
-On Windows, double-click:
+## Quick Start (Desktop App)
 
-```text
-run_trinetra.bat
-```
-
-The launcher creates a local Python environment, installs missing packages on the
-first run, starts the server, and opens the dashboard automatically.
-
-Manual setup:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python -m backend
-```
-
-Open `http://127.0.0.1:8000`.
-
-Desktop app:
+### One-click launcher:
 
 ```text
 run_trinetra_desktop.bat
 ```
 
-Or manually:
+This installs dependencies (Python venv + npm), starts the backend, builds the React
+dashboard, and launches the Electron desktop window.
+
+### Manual:
 
 ```powershell
-cd frontend
-npm install
-npm run electron
+pip install -r requirements.txt
+cd frontend && npm install && npm run electron
 ```
 
-The Electron app builds the React dashboard, starts the FastAPI backend if it is
-not already running, then opens Trinetra Sentinel in a desktop window.
+The Electron app (`frontend/electron/main.cjs`) auto-starts the Python FastAPI backend,
+waits for it to be ready, and opens the Trinetra Sentinel desktop window.
 
-The dashboard is a **React + Vite** app in `frontend/`. `run_trinetra.bat` builds it
-automatically when Node.js is installed.
+> **Tip:** `run_trinetra.bat` (browser mode) is also available for quick testing without
+> Electron — it opens `http://127.0.0.1:8000` in your default browser.
 
-Frontend development (hot reload with API proxy):
+---
+
+## Capabilities
+
+### 13+ Detection & Analysis Engines
+
+| Engine | Function |
+|--------|----------|
+| **System Activity Engine** | Tracks process start/stop events (name-based dedup) |
+| **Resource Analyzer** | CPU, RAM, disk I/O, network connections per process |
+| **AI Attribution Engine** | Detects Cursor, Claude Code, Copilot, Cline, Roo, Windsurf, Aider in process chains |
+| **Code Protection Engine** | Mass deletion/rename/modification burst detection via watchdog |
+| **USB Security Engine** | Auto-scan for autorun, executables, scripts, hidden files, known malware hashes |
+| **Threat Detection Engine** | Encoded PowerShell, AI-origin shells, high CPU/RAM, anomaly rules |
+| **Log Correlation Engine** | Cross-category intrusion pattern detection (3+ categories in 5 min) |
+| **Risk Scoring Engine** | 0–100 scoring with time-decay, severity mapping, remediation templates |
+| **AI Analysis Module** | Local algorithm-based threat summary, findings, recommendations, interactive Q&A |
+| **Local Analytics Engine** | Log aggregation, attack chain detection (10 chains), incident timeline, markdown reports |
+| **Gemini Threat Intelligence** | Google Gemini API integration with severity gating, rate limiting, response cache |
+| **MITRE ATT&CK Mapper** | Rule-based mapping of events → MITRE techniques and tactics |
+| **Multilingual Voice Assistant** | 12-language TTS via Sarvam AI, Google Cloud TTS, Edge TTS — with conversation, investigation, guided remediation |
+| **Performance Optimizer** | Identifies safe-to-kill resource-heavy processes with critical-process protection |
+
+### Telemetry Sources
+
+- Windows Security Event Log (failed logins, account lockouts, brute-force detection)
+- Windows System/Application/Setup/PowerShell Event Logs (crashes, service failures, threat keywords)
+- USB storage device insertion/removal via WMI + Windows API
+- Startup registry monitoring (`HKCU\...\Run`)
+- File system watchdog (Desktop, Documents, Downloads) — ransomware behavior detection
+
+### AI & Intelligence
+
+- **Gemini-powered** threat analysis, alert explanation, incident reports, conversational voice interface
+- **Local AI analysis** — 100% offline summarization with dynamic Q&A routing
+- **12-language voice assistant** with multi-provider TTS fallback
+- **MITRE ATT&CK** technique mapping for all detected events
+- **Attack chain detection** — 10 predefined attack progression patterns
+
+### Notifications
+
+- **WPF desktop popups** — bottom-right corner with severity-colored borders
+- **WinForms balloon tips** — fallback if WPF unavailable
+- **System alert sounds** for critical/high severity
+- **Severity-based cooldowns** to prevent notification flooding
+
+---
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────┐
+│           ELECTRON DESKTOP APP                │
+│  ┌────────────────────────────────────────┐   │
+│  │         React Dashboard (Vite)         │   │
+│  │  Endpoint Status  │  Live Threat Feed  │   │
+│  │  USB Security     │  AI Analysis       │   │
+│  │  Process Viewer   │  Voice Assistant   │   │
+│  └────────────────┬───────────────────────┘   │
+│                   │ WebSocket + REST           │
+├───────────────────┼──────────────────────────┤
+│                   ▼                            │
+│          FastAPI Backend (uvicorn)             │
+│  ┌────────────────────────────────────────┐   │
+│  │  SystemMonitor (3s loop)               │   │
+│  │  ┌──────────┐ ┌──────────┐ ┌────────┐  │   │
+│  │  │Telemetry │ │ Process  │ │Resource│  │   │
+│  │  │Collectors│ │ Scanner  │ │Analyzer│  │   │
+│  │  └──────────┘ └──────────┘ └────────┘  │   │
+│  └────────────────────────────────────────┘   │
+│  ┌──────────┐ ┌──────────┐ ┌──────────────┐  │
+│  │  Threat  │ │  AI &    │ │SQLite + Log  │  │
+│  │ Engines  │ │ Analytics│ │   Storage    │  │
+│  └──────────┘ └──────────┘ └──────────────┘  │
+└──────────────────────────────────────────────┘
+```
+
+---
+
+## Development
 
 ```powershell
-cd frontend
-npm install
-npm run dev
+# Backend (separate terminal)
+python -m backend                                    # http://127.0.0.1:8000
+
+# Frontend dev with hot-reload (separate terminal)
+cd frontend && npm install && npm run dev             # http://127.0.0.1:5173
+
+# Electron dev (builds frontend, starts backend, opens desktop window)
+cd frontend && npm run electron
+
+# Production build
+cd frontend && npm run build
 ```
 
-In another terminal, start the backend with `python -m backend`, then open
-`http://127.0.0.1:5173`.
+---
 
-Production build:
+## Requirements
 
-```powershell
-cd frontend
-npm run build
-```
+- Windows 10/11 (primary target; Linux/macOS limited)
+- Python 3.10+
+- Node.js 18+
+- Optional: `GEMINI_API_KEY` in `.env` for Gemini threat intelligence
 
-## Included
-
-- React + Vite SOC dashboard
-- FastAPI backend with WebSocket updates
-- SQLite event and system snapshot storage
-- `psutil` local process and resource monitoring
-- Windows Security Event Log monitoring for failed logins and account lockouts
-- Live USB storage insertion and removal monitoring
-- Startup registry monitoring for persistence behavior
-- Event-driven file monitoring for ransomware-like write and rename bursts
-- Correlation alerts when multiple suspicious activity categories occur together
-- Offline Isolation Forest anomaly detector with threshold fallback
-- Behavior-based rule engine and dynamic threat scoring
-- CSV incident report export
-- Responsive dashboard with live alert timeline and AI-style local summaries
+---
 
 ## Notes
 
-Windows Security Log visibility depends on the current user's Event Log permissions.
-The dashboard Collector Health panel reports whether each real telemetry source is
-active or limited. Set `TRINETRA_WATCH_PATHS` with semicolon-separated folders before
-launching to override the default Desktop, Documents, and Downloads file watchers.
+- Windows Security Log visibility depends on current user's Event Log permissions.
+- The **Collector Health** panel reports whether each telemetry source is active or limited.
+- Set `TRINETRA_WATCH_PATHS` with semicolon-separated folders to override default Desktop,
+  Documents, and Downloads file watchers.
+- Set `GEMINI_API_KEY`, `GEMINI_MODEL`, `GOOGLE_APPLICATION_CREDENTIALS`, `SARVAM_API_KEY`
+  in `.env` for AI features.
